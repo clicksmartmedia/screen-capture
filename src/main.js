@@ -309,8 +309,9 @@ function takeScreenshot() {
       log('Hiding app from dock');
     }
     
-    // First capture the screen content while all windows are hidden
-    log('Capturing screen content before showing any windows');
+    // IMPORTANT: First capture the entire screen content while all windows are hidden
+    // This ensures we get a clean screenshot without any overlay
+    log('Capturing entire screen content before showing any windows');
     desktopCapturer.getSources({ 
       types: ['screen'], 
       thumbnailSize: { 
@@ -329,7 +330,8 @@ function takeScreenshot() {
         capturedScreenshotData = {
           sourceId: primarySource.id,
           thumbnail: primarySource.thumbnail.toDataURL(),
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          fullScreenImage: primarySource.thumbnail // Store the full image for later cropping
         };
         
         log('Screen content pre-captured successfully');
@@ -519,8 +521,8 @@ ipcMain.on('capture-completed', (event, bounds) => {
   }
   
   // Check if we have pre-captured screenshot data
-  if (capturedScreenshotData && capturedScreenshotData.sourceId) {
-    log('Using pre-captured screenshot data');
+  if (capturedScreenshotData && capturedScreenshotData.fullScreenImage) {
+    log('Using pre-captured screenshot data for cropping');
     
     // Add the bounds to the captured data
     capturedScreenshotData.bounds = bounds;

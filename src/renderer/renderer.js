@@ -75,20 +75,26 @@ function App() {
         // Create canvas to capture the specific area
         const canvas = document.createElement('canvas');
         
-        // Check if we have pre-captured thumbnail data
-        if (data.thumbnail) {
-          logToRenderer('Using pre-captured thumbnail data');
+        // Check if we have pre-captured fullScreenImage data (preferred method)
+        if (data.fullScreenImage) {
+          logToRenderer('Using pre-captured fullScreenImage data (clean screenshot without overlay)');
           
-          // Create an image from the thumbnail
+          // Set canvas size to the bounds
+          canvas.width = data.bounds.width;
+          canvas.height = data.bounds.height;
+          
+          logToRenderer(`Canvas size set to ${data.bounds.width}x${data.bounds.height}`);
+          
+          // Get the native image from the fullScreenImage
+          const nativeImg = data.fullScreenImage;
+          
+          // Convert the native image to a data URL
+          const fullImageDataUrl = nativeImg.toDataURL();
+          
+          // Create an image from the data URL
           const img = new Image();
           img.onload = () => {
-            logToRenderer('Pre-captured image loaded');
-            
-            // Set canvas size to the bounds
-            canvas.width = data.bounds.width;
-            canvas.height = data.bounds.height;
-            
-            logToRenderer(`Canvas size set to ${data.bounds.width}x${data.bounds.height}`);
+            logToRenderer('Pre-captured fullScreenImage loaded');
             
             // Draw the specific region from the pre-captured image
             const ctx = canvas.getContext('2d');
@@ -98,7 +104,7 @@ function App() {
               0, 0, data.bounds.width, data.bounds.height
             );
             
-            logToRenderer('Image drawn to canvas from pre-captured data');
+            logToRenderer('Image drawn to canvas from pre-captured fullScreenImage');
             
             // Get image data
             const imageData = canvas.toDataURL('image/png');
@@ -119,13 +125,24 @@ function App() {
           };
           
           img.onerror = (err) => {
-            logToRenderer(`Error loading pre-captured image: ${err}`, 'ERROR');
-            // Fall back to the original method
-            captureUsingMediaStream(data);
+            logToRenderer(`Error loading pre-captured fullScreenImage: ${err}`, 'ERROR');
+            // Fall back to thumbnail if available
+            if (data.thumbnail) {
+              logToRenderer('Falling back to thumbnail data');
+              useThumbnailData(data, canvas);
+            } else {
+              // Fall back to the original method
+              captureUsingMediaStream(data);
+            }
           };
           
-          // Set the source to the thumbnail data URL
-          img.src = data.thumbnail;
+          // Set the source to the full image data URL
+          img.src = fullImageDataUrl;
+        }
+        // Check if we have pre-captured thumbnail data (fallback method)
+        else if (data.thumbnail) {
+          logToRenderer('Using pre-captured thumbnail data');
+          useThumbnailData(data, canvas);
         } else {
           // Fall back to the original method using media stream
           logToRenderer('No pre-captured data available, using media stream');
@@ -608,6 +625,57 @@ function App() {
     } catch (e) {
       logToRenderer(`Error in captureUsingMediaStream: ${e.message}`, 'ERROR');
     }
+  }
+
+  // Helper function to use thumbnail data
+  function useThumbnailData(data, canvas) {
+    // Create an image from the thumbnail
+    const img = new Image();
+    img.onload = () => {
+      logToRenderer('Pre-captured thumbnail image loaded');
+      
+      // Set canvas size to the bounds
+      canvas.width = data.bounds.width;
+      canvas.height = data.bounds.height;
+      
+      logToRenderer(`Canvas size set to ${data.bounds.width}x${data.bounds.height}`);
+      
+      // Draw the specific region from the pre-captured image
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(
+        img, 
+        data.bounds.x, data.bounds.y, data.bounds.width, data.bounds.height,
+        0, 0, data.bounds.width, data.bounds.height
+      );
+      
+      logToRenderer('Image drawn to canvas from pre-captured thumbnail data');
+      
+      // Get image data
+      const imageData = canvas.toDataURL('image/png');
+      logToRenderer(`Image data URL created, length: ${imageData.length}`);
+      setImage(imageData);
+      
+      // Copy to clipboard
+      try {
+        // Send to main process to handle clipboard copy
+        logToRenderer('Sending image to main process for clipboard copy');
+        ipcRenderer.send('copy-to-clipboard', imageData);
+        setClipboardStatus('Image copied to clipboard');
+        setTimeout(() => setClipboardStatus(''), 3000); // Clear status after 3 seconds
+      } catch (clipboardError) {
+        logToRenderer(`Error copying to clipboard: ${clipboardError.message}`, 'ERROR');
+        setClipboardStatus('Failed to copy to clipboard');
+      }
+    };
+    
+    img.onerror = (err) => {
+      logToRenderer(`Error loading pre-captured image: ${err}`, 'ERROR');
+      // Fall back to the original method
+      captureUsingMediaStream(data);
+    };
+    
+    // Set the source to the thumbnail data URL
+    img.src = data.thumbnail;
   }
 
   return (
