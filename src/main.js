@@ -197,6 +197,8 @@ function createCaptureWindow() {
       frame: false,
       transparent: true,
       alwaysOnTop: true,
+      skipTaskbar: true, // Don't show in taskbar
+      show: false, // Don't show until loaded
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
@@ -214,6 +216,8 @@ function createCaptureWindow() {
     
     captureWindow.webContents.on('did-finish-load', () => {
       log('Capture window loaded successfully');
+      // Only show the window after it's fully loaded
+      captureWindow.show();
     });
     
     captureWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
@@ -228,35 +232,23 @@ function createCaptureWindow() {
 function takeScreenshot() {
   log('Taking screenshot');
   try {
-    // Check if mainWindow exists and is not destroyed
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      log('Hiding main window before capture');
-      mainWindow.hide();
-      
-      // Small delay to ensure the window is fully hidden
-      setTimeout(() => {
-        log('Creating capture window after delay');
-        createCaptureWindow();
-      }, 100);
-    } else {
-      // If mainWindow doesn't exist or is destroyed, create a new one
-      log('Main window does not exist or is destroyed, creating new one');
-      createWindow();
-      
-      // Wait for the window to be ready before hiding it
-      mainWindow.once('ready-to-show', () => {
-        log('Main window ready, preparing for capture');
-        setTimeout(() => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            log('Hiding main window and creating capture window');
-            mainWindow.hide();
-            createCaptureWindow();
-          } else {
-            log('Main window was destroyed during delay', 'WARNING');
-          }
-        }, 500);
-      });
-    }
+    // Hide all windows before capture
+    const allWindows = BrowserWindow.getAllWindows();
+    log(`Hiding ${allWindows.length} windows before capture`);
+    
+    // Hide all windows except the capture window
+    allWindows.forEach(window => {
+      if (window !== captureWindow && !window.isDestroyed()) {
+        log(`Hiding window: ${window.id}`);
+        window.hide();
+      }
+    });
+    
+    // Small delay to ensure all windows are fully hidden
+    setTimeout(() => {
+      log('Creating capture window after delay');
+      createCaptureWindow();
+    }, 300); // Increased delay to ensure windows are fully hidden
   } catch (error) {
     log(`Error taking screenshot: ${error.message}`, 'ERROR');
   }
@@ -427,30 +419,33 @@ ipcMain.on('capture-completed', (event, bounds) => {
       const source = sources[0]; // Get the primary screen
       log(`Using source: ${source.id}`);
       
-      // Show the main window again if it exists and is not destroyed
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        log('Showing main window and sending capture data');
-        mainWindow.show();
-        
-        mainWindow.webContents.send('capture-image', {
-          sourceId: source.id,
-          bounds: bounds
-        });
-      } else {
-        // If mainWindow doesn't exist or is destroyed, create a new one
-        log('Main window does not exist or is destroyed, creating new one');
-        createWindow();
-        
-        // Wait for the window to be ready before sending the capture
-        mainWindow.once('ready-to-show', () => {
-          log('Main window ready, showing and sending capture data');
+      // Add a small delay before showing the main window to ensure the capture is complete
+      setTimeout(() => {
+        // Show the main window again if it exists and is not destroyed
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          log('Showing main window and sending capture data');
           mainWindow.show();
+          
           mainWindow.webContents.send('capture-image', {
             sourceId: source.id,
             bounds: bounds
           });
-        });
-      }
+        } else {
+          // If mainWindow doesn't exist or is destroyed, create a new one
+          log('Main window does not exist or is destroyed, creating new one');
+          createWindow();
+          
+          // Wait for the window to be ready before sending the capture
+          mainWindow.once('ready-to-show', () => {
+            log('Main window ready, showing and sending capture data');
+            mainWindow.show();
+            mainWindow.webContents.send('capture-image', {
+              sourceId: source.id,
+              bounds: bounds
+            });
+          });
+        }
+      }, 200); // Add delay before showing windows again
     })
     .catch(error => {
       log(`Error getting screen sources: ${error.message}`, 'ERROR');
@@ -468,14 +463,17 @@ ipcMain.on('capture-cancelled', () => {
     log('Capture window already closed or destroyed', 'WARNING');
   }
   
-  // Show the main window again if it exists and is not destroyed
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    log('Showing main window');
-    mainWindow.show();
-  } else {
-    log('Main window does not exist or is destroyed, creating new one');
-    createWindow();
-  }
+  // Add a small delay before showing the main window
+  setTimeout(() => {
+    // Show the main window again if it exists and is not destroyed
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      log('Showing main window');
+      mainWindow.show();
+    } else {
+      log('Main window does not exist or is destroyed, creating new one');
+      createWindow();
+    }
+  }, 200); // Add delay before showing windows again
 });
 
 // Handle copying image to clipboard

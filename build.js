@@ -42,7 +42,7 @@ const captureHtml = `<!DOCTYPE html>
       margin: 0;
       padding: 0;
       overflow: hidden;
-      background: rgba(0, 0, 0, 0.05);
+      background: transparent;
       cursor: crosshair;
     }
     #selection {
@@ -50,6 +50,7 @@ const captureHtml = `<!DOCTYPE html>
       border: 2px dashed #fff;
       background: rgba(0, 0, 255, 0.1);
       display: none;
+      box-shadow: 0 0 0 99999px rgba(0, 0, 0, 0.3);
     }
   </style>
 </head>
