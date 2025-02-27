@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, desktopCapturer, dialog, clipboard, nativeImage, globalShortcut, Tray, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, desktopCapturer, dialog, clipboard, nativeImage, globalShortcut, Tray, Menu, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
@@ -32,6 +32,9 @@ log(`App starting. Version: ${app.getVersion()}, Platform: ${process.platform}`)
 let mainWindow;
 let captureWindow;
 let tray = null;
+
+// Global variable to store screen capture data
+let capturedScreenshotData = null;
 
 function createWindow() {
   log('Creating main window');
@@ -184,10 +187,15 @@ function createCaptureWindow() {
   log('Creating capture window');
   try {
     // Get the primary display dimensions
-    const { screen } = require('electron');
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width, height } = primaryDisplay.workAreaSize;
     log(`Screen dimensions: ${width}x${height}`);
+    
+    // First make sure any existing capture window is closed
+    if (captureWindow && !captureWindow.isDestroyed()) {
+      log('Closing existing capture window');
+      captureWindow.close();
+    }
     
     captureWindow = new BrowserWindow({
       width: width,
@@ -199,29 +207,76 @@ function createCaptureWindow() {
       alwaysOnTop: true,
       skipTaskbar: true, // Don't show in taskbar
       show: false, // Don't show until loaded
+      hasShadow: false, // No window shadow
+      enableLargerThanScreen: true, // Allow larger than screen to ensure full coverage
+      resizable: false, // Not resizable
+      movable: false, // Not movable
+      minimizable: false, // Not minimizable
+      maximizable: false, // Not maximizable
+      fullscreenable: false, // Not fullscreenable
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
-        preload: path.join(__dirname, 'preload.js')
+        preload: path.join(__dirname, 'preload.js'),
+        backgroundThrottling: false // Prevent throttling when in background
       },
     });
 
     // Enable remote module for this window
     remoteMain.enable(captureWindow.webContents);
 
-    const captureHtmlPath = path.join(__dirname, '../dist/capture.html');
-    log(`Loading capture HTML from: ${captureHtmlPath}`);
+    // Try multiple possible paths for the capture HTML file
+    const possibleCaptureHtmlPaths = [
+      path.join(__dirname, '../dist/capture.html'),  // Development path
+      path.join(process.resourcesPath, 'dist/capture.html'),  // Production path
+      path.join(app.getAppPath(), 'dist/capture.html')  // Alternative path
+    ];
     
+    let captureHtmlPath = null;
+    for (const testPath of possibleCaptureHtmlPaths) {
+      log(`Testing capture HTML path: ${testPath}`);
+      if (fs.existsSync(testPath)) {
+        captureHtmlPath = testPath;
+        log(`Found capture HTML at: ${captureHtmlPath}`);
+        break;
+      }
+    }
+    
+    if (!captureHtmlPath) {
+      log('Could not find capture.html file', 'ERROR');
+      throw new Error('Capture HTML file not found');
+    }
+    
+    log(`Loading capture HTML from: ${captureHtmlPath}`);
     captureWindow.loadFile(captureHtmlPath);
     
     captureWindow.webContents.on('did-finish-load', () => {
       log('Capture window loaded successfully');
+      
+      // Make sure the window covers the entire screen
+      captureWindow.setSize(width, height);
+      captureWindow.setPosition(0, 0);
+      
       // Only show the window after it's fully loaded
       captureWindow.show();
+      captureWindow.focus(); // Ensure the capture window has focus
+      
+      // On macOS, make sure the window is on top of everything
+      if (process.platform === 'darwin') {
+        captureWindow.setAlwaysOnTop(true, 'screen-saver', 1); // Higher priority
+      }
+      
+      log('Capture window is now visible with overlay');
     });
     
     captureWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
       log(`Capture window failed to load: ${errorDescription}`, 'ERROR');
+    });
+    
+    // Make sure the capture window is closed if the app is quit
+    captureWindow.on('closed', () => {
+      log('Capture window closed');
+      captureWindow = null;
     });
   } catch (error) {
     log(`Error creating capture window: ${error.message}`, 'ERROR');
@@ -232,6 +287,10 @@ function createCaptureWindow() {
 function takeScreenshot() {
   log('Taking screenshot');
   try {
+    // Store the current focused window to restore focus later
+    const focusedWindow = BrowserWindow.getFocusedWindow();
+    log(`Currently focused window: ${focusedWindow ? focusedWindow.id : 'none'}`);
+    
     // Hide all windows before capture
     const allWindows = BrowserWindow.getAllWindows();
     log(`Hiding ${allWindows.length} windows before capture`);
@@ -244,11 +303,64 @@ function takeScreenshot() {
       }
     });
     
-    // Small delay to ensure all windows are fully hidden
-    setTimeout(() => {
-      log('Creating capture window after delay');
-      createCaptureWindow();
-    }, 300); // Increased delay to ensure windows are fully hidden
+    // Make sure the app is not visible in the dock/taskbar during capture
+    if (process.platform === 'darwin') {
+      app.dock.hide();
+      log('Hiding app from dock');
+    }
+    
+    // First capture the screen content while all windows are hidden
+    log('Capturing screen content before showing any windows');
+    desktopCapturer.getSources({ 
+      types: ['screen'], 
+      thumbnailSize: { 
+        width: screen.getPrimaryDisplay().workAreaSize.width, 
+        height: screen.getPrimaryDisplay().workAreaSize.height 
+      } 
+    })
+    .then(sources => {
+      log(`Found ${sources.length} screen sources for pre-capture`);
+      if (sources.length > 0) {
+        // Store the source for later use
+        const primarySource = sources[0];
+        log(`Using source: ${primarySource.id} for pre-capture`);
+        
+        // Store the thumbnail and sourceId for later use
+        capturedScreenshotData = {
+          sourceId: primarySource.id,
+          thumbnail: primarySource.thumbnail.toDataURL(),
+          timestamp: Date.now()
+        };
+        
+        log('Screen content pre-captured successfully');
+        
+        // Now create the capture window to let the user select an area
+        setTimeout(() => {
+          log('Creating capture window after delay');
+          createCaptureWindow();
+          
+          // Restore dock/taskbar visibility after capture window is created
+          if (process.platform === 'darwin') {
+            app.dock.show();
+            log('Showing app in dock');
+          }
+        }, 500); // Increased delay to ensure windows are fully hidden
+      }
+    })
+    .catch(error => {
+      log(`Error pre-capturing screen: ${error.message}`, 'ERROR');
+      // Fall back to the original method if pre-capture fails
+      setTimeout(() => {
+        log('Falling back to original capture method');
+        createCaptureWindow();
+        
+        // Restore dock/taskbar visibility
+        if (process.platform === 'darwin') {
+          app.dock.show();
+          log('Showing app in dock');
+        }
+      }, 500);
+    });
   } catch (error) {
     log(`Error taking screenshot: ${error.message}`, 'ERROR');
   }
@@ -406,50 +518,97 @@ ipcMain.on('capture-completed', (event, bounds) => {
     log('Capture window already closed or destroyed', 'WARNING');
   }
   
-  // Use desktopCapturer to get the screen content
-  log('Getting screen sources');
-  desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } })
-    .then(async sources => {
-      log(`Found ${sources.length} screen sources`);
-      if (sources.length === 0) {
-        log('No screen sources found', 'ERROR');
-        return;
-      }
-      
-      const source = sources[0]; // Get the primary screen
-      log(`Using source: ${source.id}`);
-      
-      // Add a small delay before showing the main window to ensure the capture is complete
-      setTimeout(() => {
-        // Show the main window again if it exists and is not destroyed
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          log('Showing main window and sending capture data');
+  // Check if we have pre-captured screenshot data
+  if (capturedScreenshotData && capturedScreenshotData.sourceId) {
+    log('Using pre-captured screenshot data');
+    
+    // Add the bounds to the captured data
+    capturedScreenshotData.bounds = bounds;
+    
+    // Now show the main window after a delay
+    setTimeout(() => {
+      // Show the main window again if it exists and is not destroyed
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        log('Showing main window and sending capture data');
+        mainWindow.show();
+        
+        // Wait a bit before sending the capture data to ensure the window is fully shown
+        setTimeout(() => {
+          mainWindow.webContents.send('capture-image', capturedScreenshotData);
+        }, 100);
+      } else {
+        // If mainWindow doesn't exist or is destroyed, create a new one
+        log('Main window does not exist or is destroyed, creating new one');
+        createWindow();
+        
+        // Wait for the window to be ready before sending the capture
+        mainWindow.once('ready-to-show', () => {
+          log('Main window ready, showing and sending capture data');
           mainWindow.show();
           
-          mainWindow.webContents.send('capture-image', {
-            sourceId: source.id,
-            bounds: bounds
-          });
-        } else {
-          // If mainWindow doesn't exist or is destroyed, create a new one
-          log('Main window does not exist or is destroyed, creating new one');
-          createWindow();
-          
-          // Wait for the window to be ready before sending the capture
-          mainWindow.once('ready-to-show', () => {
-            log('Main window ready, showing and sending capture data');
-            mainWindow.show();
-            mainWindow.webContents.send('capture-image', {
-              sourceId: source.id,
-              bounds: bounds
-            });
-          });
+          // Wait a bit before sending the capture data
+          setTimeout(() => {
+            mainWindow.webContents.send('capture-image', capturedScreenshotData);
+          }, 100);
+        });
+      }
+    }, 500); // Longer delay before showing windows again
+  } else {
+    // Fallback to the old method if pre-capture failed
+    log('No pre-captured data available, falling back to capture after selection', 'WARNING');
+    
+    // Use desktopCapturer to get the screen content while all windows are still hidden
+    log('Getting screen sources');
+    desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } })
+      .then(async sources => {
+        log(`Found ${sources.length} screen sources`);
+        if (sources.length === 0) {
+          log('No screen sources found', 'ERROR');
+          return;
         }
-      }, 200); // Add delay before showing windows again
-    })
-    .catch(error => {
-      log(`Error getting screen sources: ${error.message}`, 'ERROR');
-    });
+        
+        const source = sources[0]; // Get the primary screen
+        log(`Using source: ${source.id}`);
+        
+        // Store the source ID and bounds for later use
+        capturedScreenshotData = {
+          sourceId: source.id,
+          bounds: bounds
+        };
+        
+        // Now show the main window after a delay
+        setTimeout(() => {
+          // Show the main window again if it exists and is not destroyed
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            log('Showing main window and sending capture data');
+            mainWindow.show();
+            
+            // Wait a bit before sending the capture data to ensure the window is fully shown
+            setTimeout(() => {
+              mainWindow.webContents.send('capture-image', capturedScreenshotData);
+            }, 100);
+          } else {
+            // If mainWindow doesn't exist or is destroyed, create a new one
+            log('Main window does not exist or is destroyed, creating new one');
+            createWindow();
+            
+            // Wait for the window to be ready before sending the capture
+            mainWindow.once('ready-to-show', () => {
+              log('Main window ready, showing and sending capture data');
+              mainWindow.show();
+              
+              // Wait a bit before sending the capture data
+              setTimeout(() => {
+                mainWindow.webContents.send('capture-image', capturedScreenshotData);
+              }, 100);
+            });
+          }
+        }, 500); // Longer delay before showing windows again
+      })
+      .catch(error => {
+        log(`Error getting screen sources: ${error.message}`, 'ERROR');
+      });
+  }
 });
 
 // Handle capture cancellation
@@ -463,17 +622,22 @@ ipcMain.on('capture-cancelled', () => {
     log('Capture window already closed or destroyed', 'WARNING');
   }
   
-  // Add a small delay before showing the main window
+  // Add a longer delay before showing the main window
   setTimeout(() => {
     // Show the main window again if it exists and is not destroyed
     if (mainWindow && !mainWindow.isDestroyed()) {
       log('Showing main window');
       mainWindow.show();
+      mainWindow.focus();
     } else {
       log('Main window does not exist or is destroyed, creating new one');
       createWindow();
+      mainWindow.once('ready-to-show', () => {
+        mainWindow.show();
+        mainWindow.focus();
+      });
     }
-  }, 200); // Add delay before showing windows again
+  }, 500); // Longer delay before showing windows again
 });
 
 // Handle copying image to clipboard

@@ -1,9 +1,29 @@
+/* Modern UI Styles for Screen Capture App */
+:root {
+  --primary-color: #4361ee;
+  --primary-hover: #3a56d4;
+  --secondary-color: #f72585;
+  --secondary-hover: #e91e63;
+  --success-color: #4caf50;
+  --danger-color: #f44336;
+  --danger-hover: #e53935;
+  --background-color: #f8f9fa;
+  --card-background: #ffffff;
+  --text-color: #333333;
+  --text-secondary: #6c757d;
+  --border-radius: 8px;
+  --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --transition: all 0.2s ease-in-out;
+}
+
 body {
   margin: 0;
   padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica,
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
     Arial, sans-serif;
-  background-color: #f5f5f5;
+  background-color: var(--background-color);
+  color: var(--text-color);
+  line-height: 1.5;
 }
 
 .app-container {
@@ -12,136 +32,243 @@ body {
   height: 100vh;
   padding: 20px;
   box-sizing: border-box;
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
+/* Toolbar Styles */
 .toolbar {
   display: flex;
   gap: 15px;
-  margin-bottom: 15px;
-  padding: 10px;
-  background-color: #fff;
-  border-radius: 5px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  margin-bottom: 20px;
+  padding: 16px;
+  background-color: var(--card-background);
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow);
   align-items: center;
   flex-wrap: wrap;
 }
 
 .tool-group {
   display: flex;
-  gap: 5px;
+  gap: 8px;
+  background-color: #f1f3f5;
+  padding: 4px;
+  border-radius: var(--border-radius);
 }
 
+/* Button Styles */
 button {
-  padding: 8px 12px;
+  padding: 10px 16px;
   border: none;
-  background-color: #f0f0f0;
-  border-radius: 4px;
+  background-color: #e9ecef;
+  border-radius: var(--border-radius);
   cursor: pointer;
   font-size: 14px;
-  transition: background-color 0.2s;
+  font-weight: 500;
+  color: var(--text-color);
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 button:hover {
-  background-color: #e0e0e0;
+  background-color: #dee2e6;
+  transform: translateY(-1px);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+button:first-child {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+button:first-child:hover {
+  background-color: var(--primary-hover);
 }
 
 button.active {
-  background-color: #0078d7;
+  background-color: var(--primary-color);
   color: white;
 }
 
 .delete-button {
-  background-color: #ff4d4f;
-  color: white;
+  background-color: var(--danger-color) !important;
+  color: white !important;
 }
 
 .delete-button:hover {
-  background-color: #ff7875;
+  background-color: var(--danger-hover) !important;
 }
 
+/* Color Picker Styles */
 .color-picker {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 8px;
+  background-color: #f1f3f5;
+  padding: 8px 12px;
+  border-radius: var(--border-radius);
 }
 
+.color-picker label {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.color-picker input[type="color"] {
+  border: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  cursor: pointer;
+  background: none;
+}
+
+/* Status Message Styles */
 .status-message {
-  margin-bottom: 10px;
-  padding: 8px 12px;
-  background-color: #4CAF50;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background-color: var(--success-color);
   color: white;
-  border-radius: 4px;
+  border-radius: var(--border-radius);
   text-align: center;
   animation: fadeIn 0.3s ease-in-out;
+  box-shadow: var(--box-shadow);
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
+/* Canvas Container Styles */
 .canvas-container {
   flex: 1;
   display: flex;
   justify-content: center;
   align-items: center;
-  background-color: #fff;
-  border-radius: 5px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  background-color: var(--card-background);
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow);
   overflow: auto;
+  margin-bottom: 20px;
+  position: relative;
 }
 
 .placeholder {
-  color: #777;
+  color: var(--text-secondary);
   font-size: 18px;
+  text-align: center;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.placeholder::before {
+  content: "📷";
+  font-size: 48px;
+  margin-bottom: 16px;
 }
 
 canvas {
   max-width: 100%;
   max-height: 100%;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
 }
 
+/* Share Container Styles */
 .share-container {
-  margin-top: 15px;
-  padding: 10px;
-  background-color: #fff;
-  border-radius: 5px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  margin-top: 0;
+  padding: 16px;
+  background-color: var(--card-background);
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow);
 }
 
 .button-group {
   display: flex;
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 .button-group button {
   flex: 1;
 }
 
+.button-group button:first-child {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.button-group button:last-child {
+  background-color: var(--secondary-color);
+  color: white;
+}
+
+.button-group button:last-child:hover {
+  background-color: var(--secondary-hover);
+}
+
 .share-url {
-  margin-top: 10px;
-  padding: 10px;
-  background-color: #f0f0f0;
-  border-radius: 4px;
+  margin-top: 16px;
+  padding: 16px;
+  background-color: #f1f3f5;
+  border-radius: var(--border-radius);
+  border-left: 4px solid var(--primary-color);
+}
+
+.share-url p {
+  margin: 0 0 8px 0;
+  font-weight: 500;
 }
 
 .share-url a {
-  color: #0078d7;
+  color: var(--primary-color);
   word-break: break-all;
+  text-decoration: none;
+  font-weight: 500;
 }
 
+.share-url a:hover {
+  text-decoration: underline;
+}
+
+/* Element Info Styles */
 .element-info {
-  margin-top: 10px;
-  padding: 10px;
-  background-color: #e6f7ff;
-  border: 1px solid #91d5ff;
-  border-radius: 4px;
-  color: #0078d7;
+  margin-top: 16px;
+  padding: 16px;
+  background-color: #e7f5ff;
+  border-radius: var(--border-radius);
+  color: #1971c2;
   font-size: 14px;
+  box-shadow: var(--box-shadow);
+  border-left: 4px solid #1971c2;
 }
 
 .element-info p {
   margin: 5px 0;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .tool-group {
+    flex-wrap: wrap;
+  }
+  
+  .button-group {
+    flex-direction: column;
+  }
 } 

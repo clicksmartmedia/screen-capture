@@ -74,31 +74,15 @@ function App() {
       try {
         // Create canvas to capture the specific area
         const canvas = document.createElement('canvas');
-        const video = document.createElement('video');
         
-        logToRenderer('Requesting screen capture media');
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            audio: false,
-            video: {
-              mandatory: {
-                chromeMediaSource: 'desktop',
-                chromeMediaSourceId: data.sourceId,
-              }
-            }
-          });
+        // Check if we have pre-captured thumbnail data
+        if (data.thumbnail) {
+          logToRenderer('Using pre-captured thumbnail data');
           
-          logToRenderer('Media stream obtained successfully');
-          video.srcObject = stream;
-          
-          // Add error handler for video
-          video.onerror = (err) => {
-            logToRenderer(`Video error: ${err.message}`, 'ERROR');
-          };
-          
-          try {
-            await video.play();
-            logToRenderer('Video playing');
+          // Create an image from the thumbnail
+          const img = new Image();
+          img.onload = () => {
+            logToRenderer('Pre-captured image loaded');
             
             // Set canvas size to the bounds
             canvas.width = data.bounds.width;
@@ -106,15 +90,15 @@ function App() {
             
             logToRenderer(`Canvas size set to ${data.bounds.width}x${data.bounds.height}`);
             
-            // Draw the specific region
+            // Draw the specific region from the pre-captured image
             const ctx = canvas.getContext('2d');
             ctx.drawImage(
-              video, 
+              img, 
               data.bounds.x, data.bounds.y, data.bounds.width, data.bounds.height,
               0, 0, data.bounds.width, data.bounds.height
             );
             
-            logToRenderer('Image drawn to canvas');
+            logToRenderer('Image drawn to canvas from pre-captured data');
             
             // Get image data
             const imageData = canvas.toDataURL('image/png');
@@ -132,15 +116,20 @@ function App() {
               logToRenderer(`Error copying to clipboard: ${clipboardError.message}`, 'ERROR');
               setClipboardStatus('Failed to copy to clipboard');
             }
-            
-            // Stop the video stream
-            logToRenderer('Stopping media stream');
-            stream.getTracks().forEach(track => track.stop());
-          } catch (videoError) {
-            logToRenderer(`Error playing video: ${videoError.message}`, 'ERROR');
-          }
-        } catch (mediaError) {
-          logToRenderer(`Error getting media: ${mediaError.message}`, 'ERROR');
+          };
+          
+          img.onerror = (err) => {
+            logToRenderer(`Error loading pre-captured image: ${err}`, 'ERROR');
+            // Fall back to the original method
+            captureUsingMediaStream(data);
+          };
+          
+          // Set the source to the thumbnail data URL
+          img.src = data.thumbnail;
+        } else {
+          // Fall back to the original method using media stream
+          logToRenderer('No pre-captured data available, using media stream');
+          captureUsingMediaStream(data);
         }
       } catch (e) {
         logToRenderer(`Error in capture-image handler: ${e.message}`, 'ERROR');
@@ -542,6 +531,84 @@ function App() {
     newElements[selectedElement].color = newColor;
     setElements(newElements);
   };
+
+  // Function to capture using media stream (original method)
+  async function captureUsingMediaStream(data) {
+    logToRenderer('Capturing using media stream');
+    try {
+      const canvas = document.createElement('canvas');
+      const video = document.createElement('video');
+      
+      logToRenderer('Requesting screen capture media');
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            mandatory: {
+              chromeMediaSource: 'desktop',
+              chromeMediaSourceId: data.sourceId,
+            }
+          }
+        });
+        
+        logToRenderer('Media stream obtained successfully');
+        video.srcObject = stream;
+        
+        // Add error handler for video
+        video.onerror = (err) => {
+          logToRenderer(`Video error: ${err.message}`, 'ERROR');
+        };
+        
+        try {
+          await video.play();
+          logToRenderer('Video playing');
+          
+          // Set canvas size to the bounds
+          canvas.width = data.bounds.width;
+          canvas.height = data.bounds.height;
+          
+          logToRenderer(`Canvas size set to ${data.bounds.width}x${data.bounds.height}`);
+          
+          // Draw the specific region
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(
+            video, 
+            data.bounds.x, data.bounds.y, data.bounds.width, data.bounds.height,
+            0, 0, data.bounds.width, data.bounds.height
+          );
+          
+          logToRenderer('Image drawn to canvas');
+          
+          // Get image data
+          const imageData = canvas.toDataURL('image/png');
+          logToRenderer(`Image data URL created, length: ${imageData.length}`);
+          setImage(imageData);
+          
+          // Copy to clipboard
+          try {
+            // Send to main process to handle clipboard copy
+            logToRenderer('Sending image to main process for clipboard copy');
+            ipcRenderer.send('copy-to-clipboard', imageData);
+            setClipboardStatus('Image copied to clipboard');
+            setTimeout(() => setClipboardStatus(''), 3000); // Clear status after 3 seconds
+          } catch (clipboardError) {
+            logToRenderer(`Error copying to clipboard: ${clipboardError.message}`, 'ERROR');
+            setClipboardStatus('Failed to copy to clipboard');
+          }
+          
+          // Stop the video stream
+          logToRenderer('Stopping media stream');
+          stream.getTracks().forEach(track => track.stop());
+        } catch (videoError) {
+          logToRenderer(`Error playing video: ${videoError.message}`, 'ERROR');
+        }
+      } catch (mediaError) {
+        logToRenderer(`Error getting media: ${mediaError.message}`, 'ERROR');
+      }
+    } catch (e) {
+      logToRenderer(`Error in captureUsingMediaStream: ${e.message}`, 'ERROR');
+    }
+  }
 
   return (
     <div className="app-container">
