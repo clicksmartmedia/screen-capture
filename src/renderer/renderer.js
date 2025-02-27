@@ -1,6 +1,31 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 const { ipcRenderer, clipboard, nativeImage } = require('electron');
+const fs = require('fs');
+const path = require('path');
+const remote = require('@electron/remote');
+
+// Add logging functionality
+function logToRenderer(message, type = 'INFO') {
+  const timestamp = new Date().toISOString();
+  const logMessage = `[${timestamp}] [RENDERER] [${type}] ${message}`;
+  
+  // Log to console
+  console.log(logMessage);
+  
+  // Try to log to file if possible
+  try {
+    const userData = remote.app.getPath('userData');
+    if (userData) {
+      const logFile = path.join(userData, 'renderer.log');
+      fs.appendFileSync(logFile, logMessage + '\n');
+    }
+  } catch (error) {
+    console.error(`Failed to write to renderer log file: ${error.message}`);
+  }
+}
+
+logToRenderer('Renderer process starting');
 
 function App() {
   const [image, setImage] = useState(null);
@@ -21,73 +46,125 @@ function App() {
   
   // Listen for captured image
   useEffect(() => {
+    logToRenderer('Setting up IPC event listeners');
+    
+    // Check for screen capture permissions
+    async function checkScreenCapturePermission() {
+      try {
+        logToRenderer('Checking screen capture permissions');
+        const sources = await remote.desktopCapturer.getSources({ types: ['screen'] });
+        if (sources && sources.length > 0) {
+          logToRenderer('Screen capture permission available');
+          return true;
+        } else {
+          logToRenderer('No screen sources available', 'WARNING');
+          return false;
+        }
+      } catch (error) {
+        logToRenderer(`Screen capture permission check failed: ${error.message}`, 'ERROR');
+        return false;
+      }
+    }
+    
+    // Run the permission check
+    checkScreenCapturePermission();
+    
     ipcRenderer.on('capture-image', async (event, data) => {
+      logToRenderer(`Received capture-image event with bounds: ${JSON.stringify(data.bounds)}`);
       try {
         // Create canvas to capture the specific area
         const canvas = document.createElement('canvas');
         const video = document.createElement('video');
         
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: {
-            mandatory: {
-              chromeMediaSource: 'desktop',
-              chromeMediaSourceId: data.sourceId,
-            }
-          }
-        });
-        
-        video.srcObject = stream;
-        await video.play();
-        
-        // Set canvas size to the bounds
-        canvas.width = data.bounds.width;
-        canvas.height = data.bounds.height;
-        
-        // Draw the specific region
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(
-          video, 
-          data.bounds.x, data.bounds.y, data.bounds.width, data.bounds.height,
-          0, 0, data.bounds.width, data.bounds.height
-        );
-        
-        // Get image data
-        const imageData = canvas.toDataURL('image/png');
-        setImage(imageData);
-        
-        // Copy to clipboard
+        logToRenderer('Requesting screen capture media');
         try {
-          // Send to main process to handle clipboard copy
-          ipcRenderer.send('copy-to-clipboard', imageData);
-          setClipboardStatus('Image copied to clipboard');
-          setTimeout(() => setClipboardStatus(''), 3000); // Clear status after 3 seconds
-        } catch (clipboardError) {
-          console.error('Error copying to clipboard:', clipboardError);
-          setClipboardStatus('Failed to copy to clipboard');
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: {
+              mandatory: {
+                chromeMediaSource: 'desktop',
+                chromeMediaSourceId: data.sourceId,
+              }
+            }
+          });
+          
+          logToRenderer('Media stream obtained successfully');
+          video.srcObject = stream;
+          
+          // Add error handler for video
+          video.onerror = (err) => {
+            logToRenderer(`Video error: ${err.message}`, 'ERROR');
+          };
+          
+          try {
+            await video.play();
+            logToRenderer('Video playing');
+            
+            // Set canvas size to the bounds
+            canvas.width = data.bounds.width;
+            canvas.height = data.bounds.height;
+            
+            logToRenderer(`Canvas size set to ${data.bounds.width}x${data.bounds.height}`);
+            
+            // Draw the specific region
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(
+              video, 
+              data.bounds.x, data.bounds.y, data.bounds.width, data.bounds.height,
+              0, 0, data.bounds.width, data.bounds.height
+            );
+            
+            logToRenderer('Image drawn to canvas');
+            
+            // Get image data
+            const imageData = canvas.toDataURL('image/png');
+            logToRenderer(`Image data URL created, length: ${imageData.length}`);
+            setImage(imageData);
+            
+            // Copy to clipboard
+            try {
+              // Send to main process to handle clipboard copy
+              logToRenderer('Sending image to main process for clipboard copy');
+              ipcRenderer.send('copy-to-clipboard', imageData);
+              setClipboardStatus('Image copied to clipboard');
+              setTimeout(() => setClipboardStatus(''), 3000); // Clear status after 3 seconds
+            } catch (clipboardError) {
+              logToRenderer(`Error copying to clipboard: ${clipboardError.message}`, 'ERROR');
+              setClipboardStatus('Failed to copy to clipboard');
+            }
+            
+            // Stop the video stream
+            logToRenderer('Stopping media stream');
+            stream.getTracks().forEach(track => track.stop());
+          } catch (videoError) {
+            logToRenderer(`Error playing video: ${videoError.message}`, 'ERROR');
+          }
+        } catch (mediaError) {
+          logToRenderer(`Error getting media: ${mediaError.message}`, 'ERROR');
         }
-        
-        // Stop the video stream
-        stream.getTracks().forEach(track => track.stop());
       } catch (e) {
-        console.error('Error capturing:', e);
+        logToRenderer(`Error in capture-image handler: ${e.message}`, 'ERROR');
       }
     });
     
     ipcRenderer.on('upload-complete', (event, url) => {
+      logToRenderer(`Upload complete, received URL: ${url}`);
       setShareUrl(url);
     });
     
     ipcRenderer.on('upload-error', (event, error) => {
+      logToRenderer(`Upload error: ${error}`, 'ERROR');
       alert(`Error uploading: ${error}`);
     });
     
     ipcRenderer.on('clipboard-status', (event, status) => {
+      logToRenderer(`Clipboard status: ${status}`);
       setClipboardStatus(status);
       setTimeout(() => setClipboardStatus(''), 3000); // Clear status after 3 seconds
     });
     
     return () => {
+      logToRenderer('Cleaning up IPC event listeners');
       ipcRenderer.removeAllListeners('capture-image');
       ipcRenderer.removeAllListeners('upload-complete');
       ipcRenderer.removeAllListeners('upload-error');
